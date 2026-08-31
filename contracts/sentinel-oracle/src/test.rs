@@ -29,10 +29,7 @@ fn init_sets_operator_and_epoch_zero() {
     let (operator, client) = deploy(&env);
     assert_eq!(client.epoch(), 0);
     // is_verified on an unverified provider is false.
-    assert_eq!(
-        client.is_verified(&String::from_str(&env, "github")),
-        false
-    );
+    assert_eq!(client.is_verified(&String::from_str(&env, "github")), false);
     let _ = operator;
 }
 
@@ -69,10 +66,7 @@ fn submit_valid_attestation_verifies_provider() {
         "digest-abc",
         0,
     ));
-    assert_eq!(
-        client.is_verified(&String::from_str(&env, "github")),
-        true
-    );
+    assert_eq!(client.is_verified(&String::from_str(&env, "github")), true);
 }
 
 #[test]
@@ -256,10 +250,7 @@ fn rotate_epoch_invalidates_attestations_and_bumps() {
     client.mock_all_auths().rotate_epoch();
     assert_eq!(client.epoch(), 1);
     // Verification cleared.
-    assert_eq!(
-        client.is_verified(&String::from_str(&env, "github")),
-        false
-    );
+    assert_eq!(client.is_verified(&String::from_str(&env, "github")), false);
     // New attestation for epoch 1 works.
     client.mock_all_auths().submit_attestation(&att(
         &env,
@@ -268,8 +259,5 @@ fn rotate_epoch_invalidates_attestations_and_bumps() {
         "digest-e2",
         1,
     ));
-    assert_eq!(
-        client.is_verified(&String::from_str(&env, "github")),
-        true
-    );
+    assert_eq!(client.is_verified(&String::from_str(&env, "github")), true);
 }

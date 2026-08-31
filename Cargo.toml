@@ -2,6 +2,8 @@
 members = [
     "contracts/sentinel-vault",
     "contracts/sentinel-oracle",
+    "contracts/sentinel-payment",
+    "contracts/sentinel-sac",
 ]
 resolver = "2"
 

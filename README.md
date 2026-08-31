@@ -8,9 +8,9 @@ This is the third instantiation of the `t3n-sentinel` architecture:
 |---|---|---|
 | [t3n-sentinel](https://github.com/shojaee76-cmyk/t3n-sentinel) | T3N TEE (WASM) | live on testnet, contract id 741, 3 providers probed VALID |
 | [t3n-sentinel-solana](https://github.com/shojaee76-cmyk/t3n-sentinel-solana) | Solana (Anchor) | M1+M2 code-complete, 20/20 tests green |
-| **t3n-sentinel-soroban** (this repo) | Stellar Soroban | **29/29 tests green** |
+| **t3n-sentinel-soroban** (this repo) | Stellar Soroban | **51/51 tests green** |
 
-The shape of the API is identical across all three ports
+The shape of the API is identical across all ports
 (`init / seal / probe / list / rotate / history`). The storage model moves
 from a host-bound KV map to the Soroban ledger.
 
@@ -20,11 +20,13 @@ from a host-bound KV map to the Soroban ledger.
 |---|---|---|---|
 | `sentinel-vault` | `contracts/sentinel-vault/` | ACL'd secret vault + audit-trail ring buffer | 18 |
 | `sentinel-oracle` | `contracts/sentinel-oracle/` | TEE attestation oracle; emits `ProbeFired` only for valid attestations | 11 |
+| `sentinel-payment` | `contracts/sentinel-payment/` | **Atomic XLM micropayment rail** — per-probe payment to provider payout | 11 |
+| `sentinel-sac` | `contracts/sentinel-sac/` | **SAC-denominated rail** — audit trail in USDC-on-Stellar (or any SAC) | 11 |
 
 ## Build & test
 
 ```bash
-cargo test          # 29/29 green (native, against the Soroban SDK testutils)
+cargo test          # 51/51 green (native, against the Soroban SDK testutils)
 ```
 
 ## Security model
@@ -42,6 +44,10 @@ cargo test          # 29/29 green (native, against the Soroban SDK testutils)
    off-chain verifier (Phala / Nillion / SGX/TDX quote verifier) checks the
    real quote and, on success, submits the validated attestation digest here.
    The oracle enforces per-epoch attestations with a replay guard.
+6. **`sentinel-payment` / `sentinel-sac`**: payment is ATOMIC with the probe —
+   the transfer happens BEFORE the receipt is appended, so the invariant
+   "no probe without payment when provider is paywalled" holds by construction.
+   The contract holds the token balance; the TEE worker never holds funds.
 
 ## Maintenance contract
 
@@ -52,9 +58,9 @@ update. (Same as the T3N + Solana ports.)
 ## Roadmap
 
 - [x] M1: `sentinel_vault.rs` + `sentinel_oracle.rs` (29/29 tests green)
+- [x] M2: `sentinel_payment.rs` — atomic XLM micropayment rail (11/11)
+- [x] M3: `sentinel_sac.rs` — Stellar Asset Contract (USDC-on-Stellar) integration (11/11)
 - [ ] Deploy on Soroban testnet (see `scripts/deploy_testnet.sh`)
-- [ ] M2: `sentinel_payment.rs` — atomic XLM micropayment rail
-- [ ] M3: `sentinel_sac.rs` — Stellar Asset Contract (USDC-on-Stellar) integration
 - [ ] End-to-end narrated demo
 
 ## License

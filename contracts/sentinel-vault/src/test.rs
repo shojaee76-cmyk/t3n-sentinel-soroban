@@ -1,10 +1,7 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{
-    testutils::Address as AddressTestTrait,
-    Env,
-};
+use soroban_sdk::{testutils::Address as AddressTestTrait, Env};
 
 /// Helper: deploy a fresh vault with a given authority + tee worker.
 fn deploy(env: &Env) -> (Address, Address, SentinelVaultClient) {

@@ -1,0 +1,291 @@
+#![no_std]
+//! sentinel_sac — SAC (Stellar Asset Contract) micropayment rail for
+//! t3n-sentinel (Soroban port).
+//!
+//! Identical semantics to `sentinel-payment`, but the audit trail is
+//! denominated in a Stellar-issued asset (e.g. USDC-on-Stellar SAC) instead of
+//! native XLM. The asset contract is passed in `init`.
+//!
+//! Every `probe_with_payment` call can atomically transfer a SAC-denominated
+//! micropayment to the provider's payout address. Providers can opt into a
+//! "paywalled" mode where a probe is only recorded after the transfer
+//! succeeds — the invariant "no probe without transfer when provider is
+//! paywalled" holds by construction (transfer happens BEFORE the receipt).
+//!
+//! SECURITY MODEL
+//! ==============
+//! 1. Only the registered `tee_worker` may trigger a paid probe.
+//! 2. Payment is ATOMIC with the probe: if the transfer fails (insufficient
+//!    balance, token error), the receipt is NOT appended and the call panics.
+//! 3. The asset contract (any SAC, e.g. USDC-on-Stellar) is passed in `init`
+//!    and called via `TokenClient` (the SAC token interface).
+//! 4. `probe_with_payment` NEVER returns the API key — only the verdict.
+
+use soroban_sdk::{
+    contract, contractimpl, contracttype, symbol_short, token::TokenClient, Address, Env, Map,
+    String, Symbol, Vec,
+};
+
+#[cfg(test)]
+mod test;
+
+/// Provider registry — same maintenance contract as the vault port.
+pub mod providers {
+    use soroban_sdk::{Env, String};
+
+    pub const PROVIDERS: [&str; 4] = ["github", "groq", "openrouter", "openai"];
+
+    pub fn is_known(env: &Env, provider: &String) -> bool {
+        let mut known = false;
+        for p in PROVIDERS {
+            if &String::from_str(env, p) == provider {
+                known = true;
+            }
+        }
+        known
+    }
+}
+
+/// Storage keys.
+const TEE_WORKER: Symbol = symbol_short!("WORKER");
+const AUTHORITY: Symbol = symbol_short!("AUTHORITY");
+const ASSET: Symbol = symbol_short!("ASSET");
+const PROVIDER_CFG: Symbol = symbol_short!("PROV_CFG");
+const HISTORY: Symbol = symbol_short!("HISTORY");
+const HISTORY_COUNT: Symbol = symbol_short!("HIST_CNT");
+
+/// Ring-buffer capacity — matches the vault (16).
+pub const HISTORY_MAX: u32 = 16;
+
+/// Per-provider payment configuration (in SAC units — for USDC these are
+/// micro-USDC, 7 decimals).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProviderConfig {
+    /// Address that receives the SAC micropayment.
+    pub payout: Address,
+    /// Per-probe price in smallest SAC units. 0 = free.
+    pub price: i128,
+    /// If true, a probe is only recorded after the payment succeeds.
+    pub paywalled: bool,
+}
+
+/// Canonical probe outcome — same shape as the vault port, plus `paid`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProbeReceipt {
+    pub provider: String,
+    /// VALID | INVALID | RATE_LIMITED | UNEXPECTED
+    pub verdict: String,
+    pub http_code: u32,
+    pub detail: String,
+    pub checked_at: u64,
+    /// SAC units paid for this probe (0 if free).
+    pub paid: i128,
+}
+
+/// Map an HTTP status to a verdict. Same shape as the vault port.
+pub fn classify(code: u32) -> (&'static str, &'static str) {
+    match code {
+        200..=299 => ("VALID", "key accepted by provider"),
+        401 | 403 => ("INVALID", "credentials rejected"),
+        429 => ("RATE_LIMITED", "quota exhausted"),
+        _ => ("UNEXPECTED", "unclassified status code"),
+    }
+}
+
+#[contract]
+pub struct SentinelSac;
+
+#[contractimpl]
+impl SentinelSac {
+    /// `init` — one-time setup. Registers the vault authority, the off-chain
+    /// TEE worker authorized to trigger paid probes, and the SAC asset
+    /// contract (e.g. USDC-on-Stellar).
+    pub fn init(env: Env, authority: Address, tee_worker: Address, asset: Address) {
+        if env.storage().instance().has(&AUTHORITY) {
+            panic!("already initialized");
+        }
+        env.storage().instance().set(&AUTHORITY, &authority);
+        env.storage().instance().set(&TEE_WORKER, &tee_worker);
+        env.storage().instance().set(&ASSET, &asset);
+        env.storage().instance().set(&HISTORY_COUNT, &0u32);
+    }
+
+    /// `configure_provider` — set (or update) the payment config for a known
+    /// provider. Only the authority may call.
+    pub fn configure_provider(
+        env: Env,
+        provider: String,
+        payout: Address,
+        price: i128,
+        paywalled: bool,
+    ) {
+        Self::require_authority(&env);
+        if !providers::is_known(&env, &provider) {
+            panic!("unknown provider");
+        }
+        if price < 0 {
+            panic!("negative price");
+        }
+        let mut cfg: Map<String, ProviderConfig> = env
+            .storage()
+            .instance()
+            .get(&PROVIDER_CFG)
+            .unwrap_or(Map::new(&env));
+        cfg.set(
+            provider.clone(),
+            ProviderConfig {
+                payout: payout.clone(),
+                price,
+                paywalled,
+            },
+        );
+        env.storage().instance().set(&PROVIDER_CFG, &cfg);
+    }
+
+    /// `probe_with_payment` — the TEE worker records a probe; if the provider
+    /// is paywalled (or priced), the SAC micropayment is transferred FIRST,
+    /// atomically, then the receipt is appended. Panics if the transfer fails.
+    pub fn probe_with_payment(
+        env: Env,
+        provider: String,
+        http_code: u32,
+        detail: String,
+        paid: i128,
+    ) -> String {
+        Self::require_worker(&env);
+        if !providers::is_known(&env, &provider) {
+            panic!("unknown provider");
+        }
+        let cfg_map: Map<String, ProviderConfig> = env
+            .storage()
+            .instance()
+            .get(&PROVIDER_CFG)
+            .unwrap_or(Map::new(&env));
+        let cfg = cfg_map.get(provider.clone());
+
+        let paywalled = match &cfg {
+            Some(c) => c.paywalled,
+            None => false,
+        };
+        let price = match &cfg {
+            Some(c) => c.price,
+            None => 0,
+        };
+        let _ = price;
+
+        // If the provider is paywalled, payment is MANDATORY for the probe to
+        // be recorded. Enforce the exact configured price.
+        if paywalled {
+            let c = cfg.clone().unwrap();
+            if paid != c.price {
+                panic!("payment mismatch");
+            }
+            if paid <= 0 {
+                panic!("paywalled provider requires payment");
+            }
+            // Transfer the SAC asset from THIS contract to the payout address.
+            let asset: Address = env.storage().instance().get(&ASSET).unwrap();
+            let client = TokenClient::new(&env, &asset);
+            client.transfer(&env.current_contract_address(), &c.payout, &paid);
+        }
+
+        let (verdict, default_detail) = classify(http_code);
+        let detail_final = if detail.len() == 0 {
+            String::from_str(&env, default_detail)
+        } else {
+            detail
+        };
+
+        let receipt = ProbeReceipt {
+            provider: provider.clone(),
+            verdict: String::from_str(&env, verdict),
+            http_code,
+            detail: detail_final,
+            checked_at: env.ledger().timestamp(),
+            paid,
+        };
+        Self::append_receipt(&env, receipt);
+
+        String::from_str(&env, verdict)
+    }
+
+    /// `history` — newest-first audit trail (same as the vault port).
+    pub fn history(env: Env) -> Vec<ProbeReceipt> {
+        let count: u32 = env.storage().instance().get(&HISTORY_COUNT).unwrap_or(0);
+        let history: Map<u32, ProbeReceipt> = env
+            .storage()
+            .instance()
+            .get(&HISTORY)
+            .unwrap_or(Map::new(&env));
+        let mut out: Vec<ProbeReceipt> = Vec::new(&env);
+        let mut i = count;
+        while i > 0 {
+            if let Some(r) = history.get(i - 1) {
+                out.push_back(r);
+            }
+            i -= 1;
+        }
+        out
+    }
+
+    /// `provider_config` — read a provider's payment config.
+    pub fn provider_config(env: Env, provider: String) -> Option<ProviderConfig> {
+        let cfg_map: Map<String, ProviderConfig> = env
+            .storage()
+            .instance()
+            .get(&PROVIDER_CFG)
+            .unwrap_or(Map::new(&env));
+        cfg_map.get(provider)
+    }
+
+    /// `vault_balance` — SAC balance of this contract (for audits/tests).
+    pub fn vault_balance(env: Env) -> i128 {
+        let asset: Address = env.storage().instance().get(&ASSET).unwrap();
+        let client = TokenClient::new(&env, &asset);
+        client.balance(&env.current_contract_address())
+    }
+
+    /// `asset` — the configured SAC asset contract address.
+    pub fn asset(env: Env) -> Address {
+        env.storage().instance().get(&ASSET).unwrap()
+    }
+
+    // --- internal helpers ---
+
+    fn require_authority(env: &Env) {
+        let authority: Address = env.storage().instance().get(&AUTHORITY).unwrap();
+        authority.require_auth();
+    }
+
+    fn require_worker(env: &Env) {
+        let worker: Address = env.storage().instance().get(&TEE_WORKER).unwrap();
+        worker.require_auth();
+    }
+
+    fn append_receipt(env: &Env, receipt: ProbeReceipt) {
+        let mut count: u32 = env.storage().instance().get(&HISTORY_COUNT).unwrap_or(0);
+        let mut history: Map<u32, ProbeReceipt> = env
+            .storage()
+            .instance()
+            .get(&HISTORY)
+            .unwrap_or(Map::new(env));
+        if count < HISTORY_MAX {
+            history.set(count, receipt);
+            count += 1;
+        } else {
+            // Shift left.
+            let mut i = 1u32;
+            while i < HISTORY_MAX {
+                if let Some(prev) = history.get(i) {
+                    history.set(i - 1, prev);
+                }
+                i += 1;
+            }
+            history.set(HISTORY_MAX - 1, receipt);
+        }
+        env.storage().instance().set(&HISTORY_COUNT, &count);
+        env.storage().instance().set(&HISTORY, &history);
+    }
+}

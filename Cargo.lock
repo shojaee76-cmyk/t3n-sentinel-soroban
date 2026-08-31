@@ -1393,6 +1393,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sentinel-payment"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
+name = "sentinel-sac"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
 name = "sentinel-vault"
 version = "0.1.0"
 dependencies = [

@@ -20,7 +20,10 @@
 //! the real quote and, on success, submits the validated attestation digest
 //! here. The contract then gates the probe verdict on it.
 
-use soroban_sdk::{contract, contractevent, contractimpl, contracttype, symbol_short, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{
+    contract, contractevent, contractimpl, contracttype, symbol_short, Address, Env, Map, String,
+    Symbol, Vec,
+};
 
 /// Storage keys (instance storage).
 const OPERATOR: Symbol = symbol_short!("OPERATOR");

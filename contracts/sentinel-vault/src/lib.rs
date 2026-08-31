@@ -25,7 +25,9 @@
 //! Adding a new provider = appending ONE entry to `providers::PROVIDERS`.
 //! No schema migration, no client update. (Same as the T3N + Solana ports.)
 
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{
+    contract, contractimpl, contracttype, symbol_short, Address, Env, Map, String, Symbol, Vec,
+};
 
 pub mod providers;
 
@@ -179,7 +181,11 @@ impl SentinelVault {
         let mut rows = Vec::new(&env);
         for p in PROVIDERS.iter() {
             let name = String::from_str(&env, p.name);
-            rows.push_back((name.clone(), secrets.contains_key(name.clone()), latest.get(name)));
+            rows.push_back((
+                name.clone(),
+                secrets.contains_key(name.clone()),
+                latest.get(name),
+            ));
         }
         rows
     }
