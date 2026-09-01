@@ -271,7 +271,7 @@ def s07_roadmap(ax):
         T(ax, x + 40, 780, title, 24, STEL, "bold", family=MONO)
         T(ax, x + 40, 720, head, 24, FG, "bold", family=SANS)
         T(ax, x + 40, 660, sub, 20, ACC, family=SANS)
-        T(ax, x + 40, 610, "✓ done", 22, ACC, "bold", family=MONO)
+        T(ax, x + 40, 610, "✓ done", 22, ACC, "bold", family=SANS)
         x += 520
 
     box(ax, 160, 240, 1600, 200, fc="#0F1520", ec=ACC, lw=2)

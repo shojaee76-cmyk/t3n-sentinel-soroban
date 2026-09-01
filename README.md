@@ -86,7 +86,8 @@ update. (Same as the T3N + Solana ports.)
 - [x] **Deploy on Soroban testnet (all 4 contracts, on-chain verified)**
 - [x] **End-to-end narrated demo** — `docs/scf-demo/t3n-sentinel-scf46-demo.mp4`
   (4:13, 1080p, real on-chain tx hashes baked in — XLM 1000→900,
-  USDC 5000→4950. Build: `python docs/scf-demo/build_scf_demo.py`)
+  USDC 5000→4950. Build: `python docs/scf-demo/build_scf_demo.py`).
+  **Watch online:** https://drive.google.com/file/d/1ElNeJXEzPJBJwr900B5GOhGx41YZ9DNF/view
 
 ## License
 
