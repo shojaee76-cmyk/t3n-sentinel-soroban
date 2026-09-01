@@ -1,0 +1,1 @@
+Every S-C-F milestone is already done on-chain. Milestone one, the vault and oracle, live and verified. Milestone two, the atomic X-L-M payment rail, live — the one thousand to nine hundred transfer is on-chain. Milestone three, the S-A-C and U-S-D-C integration, live — the burn is on-chain. This grant builds on what is already live, not on a promise.

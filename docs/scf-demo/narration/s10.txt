@@ -1,0 +1,1 @@
+t3n-sentinel: agents that pay their own way, atomically, on Stellar. The code is public, the tests pass, the payments are on-chain. Thank you.

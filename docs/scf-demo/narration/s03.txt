@@ -1,0 +1,1 @@
+The entire stack is live on the Soroban testnet, protocol twenty-eight. Four contracts deployed and verified: the vault, the oracle, the payment rail, and the Stellar Asset Contract adapter. The deployer identity was funded via the testnet friendbot, and every transaction is public on the network.

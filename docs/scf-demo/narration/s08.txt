@@ -1,0 +1,1 @@
+The security model is the point. No probe without payment — the transfer happens before the receipt is appended, so the invariant holds by construction. The T-E-E worker never holds funds — the contract owns the balance. And keys never leave the vault — the probe returns only a verdict. Every invariant is covered by the fifty-one green tests on Soroban alone.

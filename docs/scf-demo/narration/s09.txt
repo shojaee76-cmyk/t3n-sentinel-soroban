@@ -1,0 +1,1 @@
+Traction today: four chains ported, one hundred nineteen contract tests passing, three live providers probed valid, and two live testnet deployments — the T3-N T-E-E and the Starknet Sepolia stack, plus the full Soroban stack with paid probes on-chain.

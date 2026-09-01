@@ -1,0 +1,1 @@
+The same rail works with any Stellar Asset Contract. We minted five thousand U-S-D-C, then probed for fifty. The burn event is on-chain: fifty U-S-D-C burned, the balance went from five thousand to forty-nine fifty, and the receipt records paid fifty. The probe transaction is six-three-three-one-six-six-three-two. One rail, any asset.

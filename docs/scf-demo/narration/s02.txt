@@ -1,0 +1,1 @@
+The architecture is three pieces. The sentinel vault holds per-provider secrets behind an access-control list, with a sixteen-entry audit ring buffer. The T-E-E oracle gates every probe on a valid attestation, replay-guarded and per-epoch. The verdict classifies the provider: valid, invalid, rate-limited, or unexpected. The probe never returns the key — only the verdict.

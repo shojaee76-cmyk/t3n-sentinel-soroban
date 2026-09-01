@@ -84,7 +84,9 @@ update. (Same as the T3N + Solana ports.)
 - [x] M2: `sentinel_payment.rs` — atomic XLM micropayment rail (11/11)
 - [x] M3: `sentinel_sac.rs` — Stellar Asset Contract (USDC-on-Stellar) integration (11/11)
 - [x] **Deploy on Soroban testnet (all 4 contracts, on-chain verified)**
-- [ ] End-to-end narrated demo
+- [x] **End-to-end narrated demo** — `docs/scf-demo/t3n-sentinel-scf46-demo.mp4`
+  (4:13, 1080p, real on-chain tx hashes baked in — XLM 1000→900,
+  USDC 5000→4950. Build: `python docs/scf-demo/build_scf_demo.py`)
 
 ## License
 
