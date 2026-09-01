@@ -1,48 +1,48 @@
-#!/usr/bin/env bash
-# Deploy sentinel-vault + sentinel-oracle to the Soroban testnet.
-#
-# Prereqs (one-time):
-#   cargo install --locked soroban-cli --features opt
-#   soroban network add --rpc-url https://soroban-testnet.stellar.org:443 \
-#     --network-passphrase "Test SDF Network ; September 2015" testnet
-#   soroban keys generate alice
-#
-# Usage:
-#   ./scripts/deploy_testnet.sh          # builds + deploys both contracts
+#!/bin/bash
+# Deploy t3n-sentinel to Soroban testnet (stellar-cli 27.x)
+# Usage: bash scripts/deploy_testnet.sh
+# Requires: stellar-cli on PATH (stellar.exe), identity "sentinel" generated + funded
 set -euo pipefail
 
-NETWORK="${NETWORK:-testnet}"
-SOURCE="${SOURCE:-alice}"
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+STELLAR="stellar"
+NET="--network testnet"
+SRC="--source sentinel"
+IDENT="GDFUVJ47JMNKUCPUJHITIZ6GFWEEQCZNNJHJOWGRPLXE3OS6NIZTLUWM"
+NATIVE_XLM_SAC="CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+WASM_DIR="target/wasm32v1-none/release"
 
-echo "==> Building WASM (release-with-logs)"
-cd "$ROOT"
-cargo build --target wasm32-unknown-unknown --release --profile release-with-logs
+# 0. Build wasm (wasm32v1-none is the soroban-sdk 27 target)
+echo "=== building wasm ==="
+rustup target add wasm32v1-none >/dev/null 2>&1 || true
+cargo build --release --target wasm32v1-none -p sentinel-vault -p sentinel-oracle -p sentinel-payment -p sentinel-sac
 
-WASMS=(
-  "contracts/sentinel-vault/target/wasm32-unknown-unknown/release-with-logs/sentinel_vault.wasm"
-  "contracts/sentinel-oracle/target/wasm32-unknown-unknown/release-with-logs/sentinel_oracle.wasm"
-)
-for wasm in "${WASMS[@]}"; do
-  [ -f "$wasm" ] || { echo "missing $wasm — run cargo build first"; exit 1; }
-done
+# 1. Upload
+echo "=== uploading wasm ==="
+V_HASH=$($STELLAR contract upload --wasm "$WASM_DIR/sentinel_vault.wasm" $SRC $NET | tail -1)
+O_HASH=$($STELLAR contract upload --wasm "$WASM_DIR/sentinel_oracle.wasm" $SRC $NET | tail -1)
+P_HASH=$($STELLAR contract upload --wasm "$WASM_DIR/sentinel_payment.wasm" $SRC $NET | tail -1)
+S_HASH=$($STELLAR contract upload --wasm "$WASM_DIR/sentinel_sac.wasm" $SRC $NET | tail -1)
 
-echo "==> Deploying sentinel-vault"
-VAULT_ID=$(soroban contract deploy \
-  --network "$NETWORK" --source "$SOURCE" \
-  --wasm "contracts/sentinel-vault/target/wasm32-unknown-unknown/release-with-logs/sentinel_vault.wasm")
-echo "sentinel-vault: $VAULT_ID"
+# 2. Deploy
+echo "=== deploying ==="
+VAULT=$($STELLAR contract deploy --wasm-hash "$V_HASH" $SRC $NET | tail -1)
+ORACLE=$($STELLAR contract deploy --wasm-hash "$O_HASH" $SRC $NET | tail -1)
+PAYMENT=$($STELLAR contract deploy --wasm-hash "$P_HASH" $SRC $NET | tail -1)
+SAC=$($STELLAR contract deploy --wasm-hash "$S_HASH" $SRC $NET | tail -1)
+echo "VAULT=$VAULT ORACLE=$ORACLE PAYMENT=$PAYMENT SAC=$SAC"
 
-echo "==> Deploying sentinel-oracle"
-ORACLE_ID=$(soroban contract deploy \
-  --network "$NETWORK" --source "$SOURCE" \
-  --wasm "contracts/sentinel-oracle/target/wasm32-unknown-unknown/release-with-logs/sentinel_oracle.wasm")
-echo "sentinel-oracle: $ORACLE_ID"
+# 3. Init
+echo "=== init ==="
+$STELLAR contract invoke --id "$VAULT" $SRC $NET -- init --authority "$IDENT" --tee_worker "$IDENT"
+$STELLAR contract invoke --id "$ORACLE" $SRC $NET -- init --operator "$IDENT"
+$STELLAR contract invoke --id "$PAYMENT" $SRC $NET -- init --authority "$IDENT" --tee_worker "$IDENT" --token "$NATIVE_XLM_SAC"
+# USDC SAC for sentinel-sac (demo asset issued by $IDENT)
+USDC=$($STELLAR contract asset deploy --asset "USDC:$IDENT" $SRC $NET | tail -1)
+$STELLAR contract invoke --id "$SAC" $SRC $NET -- init --authority "$IDENT" --tee_worker "$IDENT" --asset "$USDC"
 
-echo
-echo "Deployed:"
-echo "  sentinel-vault  $VAULT_ID"
-echo "  sentinel-oracle $ORACLE_ID"
-echo
-echo "Next: soroban contract invoke --id $VAULT_ID --network $NETWORK --source $SOURCE -- init \\
-    --authority \$(soroban keys address $SOURCE) --tee_worker <TEE_WORKER_ADDR>"
+echo "DONE"
+echo "VAULT=$VAULT"
+echo "ORACLE=$ORACLE"
+echo "PAYMENT=$PAYMENT"
+echo "SAC=$SAC"
+echo "USDC=$USDC"
